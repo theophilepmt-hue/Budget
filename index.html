@@ -143,25 +143,38 @@ function loadCfg() {
   let c = {};
   try { c = JSON.parse(localStorage.getItem("budgetCfg") || "{}"); } catch (e) {}
   for (const k in c) if (!c[k]) delete c[k];   // un réglage vide reprend la valeur par défaut
+  delete c.clientId;                            // l'ID est fixé dans le code : un ancien ID enregistré ne doit pas le remplacer
   return Object.assign({}, DEFAULTS, c);
 }
 function saveCfg(c) { try { localStorage.setItem("budgetCfg", JSON.stringify(c)); } catch (e) {} }
 let cfg = loadCfg();
 
 // ---------- Auth ----------
+// Toujours « …/Budget/ », même si la page est ouverte via « …/Budget/index.html »
+const REDIRECT = location.origin + location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/");
 let pca, account;
 async function initAuth() {
   pca = new msal.PublicClientApplication({
-    auth: { clientId: cfg.clientId, authority: "https://login.microsoftonline.com/consumers",
-            // Toujours « …/budget/ », même si la page est ouverte via « …/budget/index.html »
-            redirectUri: location.origin + location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/") },
+    auth: { clientId: cfg.clientId, authority: "https://login.microsoftonline.com/consumers", redirectUri: REDIRECT },
     cache: { cacheLocation: "localStorage" }
   });
   await pca.initialize();
   const r = await pca.handleRedirectPromise();
   account = (r && r.account) || pca.getAllAccounts()[0];
-  if (!account) { await pca.loginRedirect({ scopes: SCOPES }); return false; }
+  if (!account) { showLogin(); return false; }
   return true;
+}
+function showLogin(err) {
+  $("#main").innerHTML = `<section class="card setup">
+    <h2 style="margin-top:0">Connexion</h2>
+    ${err ? `<p style="color:var(--over)">${esc(err)}</p>` : ""}
+    <button class="btn" id="loginBtn">Se connecter avec Microsoft</button>
+    <label>Adresse à déclarer dans Azure (Authentification → Application monopage), à l'identique :</label>
+    <code style="word-break:break-all;user-select:all">${esc(REDIRECT)}</code>
+    <label>ID d'application utilisé :</label>
+    <code style="user-select:all">${esc(cfg.clientId)}</code>
+  </section>`;
+  $("#loginBtn").onclick = () => pca.loginRedirect({ scopes: SCOPES });
 }
 async function token() {
   try {
@@ -407,17 +420,19 @@ function showSetup(err) {
   $("#main").innerHTML = `<section class="card setup">
     <h2 style="margin-top:0">Réglages</h2>
     ${err ? `<p style="color:var(--over)">${esc(err)}</p>` : ""}
-    <label for="sClient">ID d'application (client) Azure</label>
-    <input id="sClient" value="${esc(cfg.clientId)}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
     <label for="sPath">Chemin du fichier dans OneDrive</label>
     <input id="sPath" value="${esc(cfg.filePath)}">
     <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn" id="sSave">Enregistrer et se connecter</button>
+      <button class="btn" id="sSave">Enregistrer</button>
       ${account ? `<button class="btn ghost" id="sOut">Se déconnecter</button>` : ""}
     </div>
+    <label>Adresse déclarée dans Azure :</label>
+    <code style="word-break:break-all;user-select:all">${esc(REDIRECT)}</code>
+    <label>ID d'application :</label>
+    <code style="user-select:all">${esc(cfg.clientId)}</code>
   </section>`;
   $("#sSave").onclick = () => {
-    cfg = Object.assign(cfg, { clientId: $("#sClient").value.trim(), filePath: $("#sPath").value.trim() });
+    cfg = Object.assign(cfg, { filePath: $("#sPath").value.trim() });
     saveCfg(cfg); location.reload();
   };
   const out = $("#sOut");
@@ -433,11 +448,12 @@ async function selectSheet(s) {
 
 async function start() {
   $("#settingsBtn").onclick = () => showSetup();
-  if (!cfg.clientId) { showSetup(); return; }
   try {
     if (!await initAuth()) return;
+  } catch (e) { showLogin("Connexion : " + e.message); return; }
+  try {
     await openFile();
-  } catch (e) { showSetup("Connexion / fichier : " + e.message); return; }
+  } catch (e) { showSetup("Fichier : " + e.message); return; }
   $("#month").innerHTML = sheets.slice().reverse().map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
   $("#month").onchange = () => selectSheet(sheets.find(s => s.id === $("#month").value));
   $("#refresh").onclick = () => selectSheet(sheet);
