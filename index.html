@@ -44,11 +44,6 @@ header button { font: inherit; border: 0; background: rgba(255,255,255,.18); col
 .kpi span { font-size: 11px; opacity: .85; }
 main { padding: 12px 16px 80px; max-width: 760px; margin: 0 auto; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-.autre { padding: 12px; border: 2px solid var(--accent); }
-.autre h2 { margin: 0 0 8px; font-size: 15px; }
-.autre .line { display: flex; gap: 8px; }
-.autre input { flex: 1; min-width: 0; }
-.autre small { color: var(--muted); display: block; margin-top: 6px; }
 input.num { font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--input); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
 .btn { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 14px; background: var(--accent); color: var(--accent-ink); }
@@ -130,10 +125,8 @@ dialog .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1
 <script>
 // ---- Réglages par défaut (modifiables dans l'appli, ⚙) ----
 const DEFAULTS = {
-  clientId: "",
-  filePath: "/Documents/01_Administratif/Banque & Factures/Comptes - nettoyé.xlsx",
-  autreTable: "Autre",   // titre du tableau qui reçoit la case « Autre »
-  autreRow: "Autre"      // ligne de ce tableau
+  clientId: "93b33e72-4ff1-482e-8b7f-89398d1e45ae",
+  filePath: "/Documents/01_Administratif/Banque & Factures/Comptes - nettoyé.xlsx"
 };
 const SCOPES = ["User.Read", "Files.ReadWrite"];
 const GRAPH = "https://graph.microsoft.com/v1.0";
@@ -149,6 +142,7 @@ const short = n => (n == null || n === "" || isNaN(n) || Number(n) === 0) ? "" :
 function loadCfg() {
   let c = {};
   try { c = JSON.parse(localStorage.getItem("budgetCfg") || "{}"); } catch (e) {}
+  for (const k in c) if (!c[k]) delete c[k];   // un réglage vide reprend la valeur par défaut
   return Object.assign({}, DEFAULTS, c);
 }
 function saveCfg(c) { try { localStorage.setItem("budgetCfg", JSON.stringify(c)); } catch (e) {} }
@@ -201,13 +195,23 @@ async function openFile() {
   sheets = ws.value.sort((a, b) => a.position - b.position);
 }
 
+// Jour de paie : le 25, sauf en décembre (le 15).
+const PAIE = m => m === 11 ? 15 : 25;
+
 function defaultSheet() {
-  // Période du 25 au 25 : après le 25, on passe au mois suivant.
+  // Le mois en cours change le jour de la paie : paie du 25/11 → feuille « Décembre »,
+  // paie du 15/12 → feuille « Janvier ».
   const d = new Date();
   let m = d.getMonth(), y = d.getFullYear();
-  if (d.getDate() > 25) { m++; if (m > 11) { m = 0; y++; } }
-  const want = `${MOIS[m]} ${y}`.toLowerCase();
-  return sheets.find(s => s.name.trim().toLowerCase() === want) || sheets[sheets.length - 1];
+  if (d.getDate() >= PAIE(m)) { m++; if (m > 11) { m = 0; y++; } }
+  const target = y * 12 + m;
+  // Feuilles nommées « Mois Année » ; à défaut de celle du mois en cours, la plus récente avant.
+  const dated = sheets.map(s => {
+    const p = s.name.trim().toLowerCase().match(/^(\S+)\s+(\d{4})$/);
+    const mi = p ? MOIS.findIndex(x => x.toLowerCase() === p[1]) : -1;
+    return { s, k: mi < 0 ? null : +p[2] * 12 + mi };
+  }).filter(x => x.k !== null && x.k <= target).sort((a, b) => b.k - a.k);
+  return dated.length ? dated[0].s : sheets[sheets.length - 1];
 }
 
 function colNum(L) { let n = 0; for (const ch of L) n = n * 26 + ch.charCodeAt(0) - 64; return n; }
@@ -323,17 +327,7 @@ function render() {
   $("#kPrev").textContent = eur(model.prev);
   $("#kReel").textContent = eur(model.reel);
   $("#kSolde").textContent = eur(model.solde);
-  const autreCat = model.cats.find(c => c.title.toLowerCase() === cfg.autreTable.toLowerCase());
-  const autreRow = autreCat && autreCat.rows.find(r => r.name.toLowerCase() === cfg.autreRow.toLowerCase());
-  let h = `<section class="card autre">
-    <h2>Autre</h2>
-    <div class="line">
-      <input class="num" id="autreIn" inputmode="decimal" placeholder="Montant €" autocomplete="off">
-      <button class="btn" id="autreBtn">Ajouter</button>
-    </div>
-    <small>${autreRow ? `Va dans le tableau « ${esc(autreCat.title)} », ligne « ${esc(autreRow.name)} » (${autreRow.realAddr}) · déjà : ${eur(autreRow.real)}`
-      : `Tableau « ${esc(cfg.autreTable)} » / ligne « ${esc(cfg.autreRow)} » introuvable sur cette feuille.`}</small>
-  </section>`;
+  let h = "";
   model.cats.forEach((c, ci) => {
     const tp = c.rows.reduce((s, r) => s + r.prev, 0), tr = c.rows.reduce((s, r) => s + r.real, 0);
     h += `<section class="card"><table>
@@ -359,8 +353,6 @@ function render() {
     writeCells([{ addr: row.realAddr, formula: appendFormula(row.realF, n), old: row.realF }],
       `${n > 0 ? "+" : ""}${short(n)} € → ${cat.title} / ${row.name}`);
   };
-  $("#autreBtn").onclick = () => autreRow && addTo(autreRow, autreCat, $("#autreIn"));
-  $("#autreIn").onkeydown = e => { if (e.key === "Enter") $("#autreBtn").click(); };
 
   document.querySelectorAll("tr[data-c]").forEach(tr => {
     const c = model.cats[tr.dataset.c], r = c.rows[tr.dataset.r];
@@ -418,18 +410,13 @@ function showSetup(err) {
     <input id="sClient" value="${esc(cfg.clientId)}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
     <label for="sPath">Chemin du fichier dans OneDrive</label>
     <input id="sPath" value="${esc(cfg.filePath)}">
-    <label for="sTab">Tableau de la case « Autre »</label>
-    <input id="sTab" value="${esc(cfg.autreTable)}">
-    <label for="sRow">Ligne de la case « Autre »</label>
-    <input id="sRow" value="${esc(cfg.autreRow)}">
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn" id="sSave">Enregistrer et se connecter</button>
       ${account ? `<button class="btn ghost" id="sOut">Se déconnecter</button>` : ""}
     </div>
   </section>`;
   $("#sSave").onclick = () => {
-    cfg = Object.assign(cfg, { clientId: $("#sClient").value.trim(), filePath: $("#sPath").value.trim(),
-      autreTable: $("#sTab").value.trim() || "Autre", autreRow: $("#sRow").value.trim() || "Autre" });
+    cfg = Object.assign(cfg, { clientId: $("#sClient").value.trim(), filePath: $("#sPath").value.trim() });
     saveCfg(cfg); location.reload();
   };
   const out = $("#sOut");
