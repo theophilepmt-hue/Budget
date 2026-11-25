@@ -153,7 +153,8 @@ let pca, account;
 async function initAuth() {
   pca = new msal.PublicClientApplication({
     auth: { clientId: cfg.clientId, authority: "https://login.microsoftonline.com/consumers",
-            redirectUri: location.origin + location.pathname },
+            // Toujours « …/budget/ », même si la page est ouverte via « …/budget/index.html »
+            redirectUri: location.origin + location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/") },
     cache: { cacheLocation: "localStorage" }
   });
   await pca.initialize();
