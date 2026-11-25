@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Budget">
+<meta name="theme-color" content="#0f766e">
+<title>Budget</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #fff; --ink: #1c2430; --muted: #6b7380; --line: #e3e6ea;
+  --accent: #0f766e; --accent-ink: #fff; --head: #eef2f1;
+  --over: #c2410c; --under: #15803d; --input: #fff8e1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b; --card: #1b2128; --ink: #e6e9ed; --muted: #8b939e; --line: #2b333c;
+    --accent: #2dd4bf; --accent-ink: #062b27; --head: #222a31;
+    --over: #fb923c; --under: #4ade80; --input: #2a2618;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: env(safe-area-inset-bottom); }
+header { position: sticky; top: 0; z-index: 5; background: var(--accent); color: var(--accent-ink);
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; }
+header .row { display: flex; gap: 8px; align-items: center; }
+header select { flex: 1; font: inherit; font-weight: 600; padding: 8px 10px; border-radius: 8px; border: 0;
+  background: rgba(255,255,255,.18); color: inherit; }
+header select option { color: #000; }
+header button { font: inherit; border: 0; background: rgba(255,255,255,.18); color: inherit;
+  border-radius: 8px; padding: 8px 12px; }
+.period { font-size: 12px; opacity: .85; margin-top: 4px; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.kpi { background: rgba(255,255,255,.14); border-radius: 8px; padding: 6px 8px; }
+.kpi b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 11px; opacity: .85; }
+main { padding: 12px 16px 80px; max-width: 760px; margin: 0 auto; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.autre { padding: 12px; border: 2px solid var(--accent); }
+.autre h2 { margin: 0 0 8px; font-size: 15px; }
+.autre .line { display: flex; gap: 8px; }
+.autre input { flex: 1; min-width: 0; }
+.autre small { color: var(--muted); display: block; margin-top: 6px; }
+input.num { font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--input); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.btn { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 14px; background: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.btn:disabled { opacity: .5; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+caption { text-align: left; font-weight: 700; padding: 10px 12px; background: var(--head); }
+caption .sub { float: right; font-weight: 500; color: var(--muted); font-size: 13px; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 600;
+  text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th:first-child { text-align: left; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+td.name { text-align: left; white-space: normal; cursor: pointer; }
+td.real { cursor: pointer; font-weight: 600; }
+td.real.over { color: var(--over); }
+td.real.under { color: var(--under); }
+td.add { width: 92px; padding: 4px 6px; }
+td.add input { width: 100%; padding: 6px 8px; font-size: 16px; }
+tr.sel td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+tr.total td { font-weight: 700; border-bottom: 0; }
+.muted { color: var(--muted); }
+.empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+.setup { padding: 16px; }
+.setup label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+.setup input { width: 100%; font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+#toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto;
+  background: #1c2430; color: #fff; border-radius: 10px; padding: 10px 12px; display: none; align-items: center; gap: 10px; z-index: 20; }
+#toast.show { display: flex; }
+#toast span { flex: 1; }
+#toast button { background: transparent; color: #5eead4; border: 0; font: inherit; font-weight: 700; }
+dialog { border: 0; border-radius: 14px; padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--card); color: var(--ink); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog .in { padding: 16px; }
+dialog h3 { margin: 0 0 4px; }
+dialog label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+dialog input { width: 100%; }
+dialog .parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+dialog .parts span { background: var(--head); border-radius: 6px; padding: 2px 6px; font-size: 13px; }
+dialog .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.busy { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <select id="month" aria-label="Mois"></select>
+    <button id="refresh" title="Recharger">↻</button>
+    <button id="settingsBtn" title="Réglages">⚙</button>
+  </div>
+  <div class="period" id="period"></div>
+  <div class="kpis">
+    <div class="kpi"><span>Prévu</span><b id="kPrev">–</b></div>
+    <div class="kpi"><span>Réel</span><b id="kReel">–</b></div>
+    <div class="kpi"><span>Solde réel</span><b id="kSolde">–</b></div>
+  </div>
+</header>
+
+<main id="main"><div class="empty">Chargement…</div></main>
+
+<dialog id="dlg">
+  <form method="dialog" class="in" id="dlgForm">
+    <h3 id="dlgTitle"></h3>
+    <div class="muted" id="dlgCat"></div>
+    <label>Détail du réel actuel</label>
+    <div class="parts" id="dlgParts"></div>
+    <label for="dlgReal">Réel (modifiable, ex. 7+8,44+43,97)</label>
+    <input class="num" id="dlgReal" inputmode="decimal" autocomplete="off" style="text-align:left">
+    <label for="dlgPrev">Prévu</label>
+    <input class="num" id="dlgPrev" inputmode="decimal" autocomplete="off">
+    <div class="acts">
+      <button class="btn ghost" value="cancel">Annuler</button>
+      <button class="btn" value="save" id="dlgSave">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast"><span id="toastMsg"></span><button id="toastUndo">Annuler</button></div>
+
+<script>
+// ---- Réglages par défaut (modifiables dans l'appli, ⚙) ----
+const DEFAULTS = {
+  clientId: "",
+  filePath: "/Documents/01_Administratif/Banque & Factures/Comptes - nettoyé.xlsx",
+  autreTable: "Autre",   // titre du tableau qui reçoit la case « Autre »
+  autreRow: "Autre"      // ligne de ce tableau
+};
+const SCOPES = ["User.Read", "Files.ReadWrite"];
+const GRAPH = "https://graph.microsoft.com/v1.0";
+const MOIS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const GRID = "A1:K90";
+
+const $ = s => document.querySelector(s);
+const eur = n => (n == null || n === "" || isNaN(n)) ? "–" :
+  Number(n).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+const short = n => (n == null || n === "" || isNaN(n) || Number(n) === 0) ? "" :
+  Number(n).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function loadCfg() {
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem("budgetCfg") || "{}"); } catch (e) {}
+  return Object.assign({}, DEFAULTS, c);
+}
+function saveCfg(c) { try { localStorage.setItem("budgetCfg", JSON.stringify(c)); } catch (e) {} }
+let cfg = loadCfg();
+
+// ---------- Auth ----------
+let pca, account;
+async function initAuth() {
+  pca = new msal.PublicClientApplication({
+    auth: { clientId: cfg.clientId, authority: "https://login.microsoftonline.com/consumers",
+            redirectUri: location.origin + location.pathname },
+    cache: { cacheLocation: "localStorage" }
+  });
+  await pca.initialize();
+  const r = await pca.handleRedirectPromise();
+  account = (r && r.account) || pca.getAllAccounts()[0];
+  if (!account) { await pca.loginRedirect({ scopes: SCOPES }); return false; }
+  return true;
+}
+async function token() {
+  try {
+    return (await pca.acquireTokenSilent({ scopes: SCOPES, account })).accessToken;
+  } catch (e) {
+    await pca.acquireTokenRedirect({ scopes: SCOPES, account });
+    throw new Error("Reconnexion…");
+  }
+}
+async function g(method, url, body) {
+  const res = await fetch(url.startsWith("http") ? url : GRAPH + url, {
+    method, headers: { Authorization: "Bearer " + await token(), "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    let msg = res.status + "";
+    try { const j = await res.json(); msg += " – " + (j.error && j.error.message || ""); } catch (e) {}
+    throw new Error(msg);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// ---------- Workbook ----------
+let itemId, wbBase, sheets = [], sheet, model, last;
+
+async function openFile() {
+  const path = cfg.filePath.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const item = await g("GET", `/me/drive/root:/${path}?$select=id,name`);
+  itemId = item.id;
+  wbBase = `/me/drive/items/${itemId}/workbook`;
+  const ws = await g("GET", `${wbBase}/worksheets?$select=id,name,position`);
+  sheets = ws.value.sort((a, b) => a.position - b.position);
+}
+
+function defaultSheet() {
+  // Période du 25 au 25 : après le 25, on passe au mois suivant.
+  const d = new Date();
+  let m = d.getMonth(), y = d.getFullYear();
+  if (d.getDate() > 25) { m++; if (m > 11) { m = 0; y++; } }
+  const want = `${MOIS[m]} ${y}`.toLowerCase();
+  return sheets.find(s => s.name.trim().toLowerCase() === want) || sheets[sheets.length - 1];
+}
+
+function colNum(L) { let n = 0; for (const ch of L) n = n * 26 + ch.charCodeAt(0) - 64; return n; }
+function colLet(n) { let s = ""; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+function parseAddr(a) {
+  const m = a.split("!").pop().replace(/\$/g, "").match(/([A-Z]+)(\d+):([A-Z]+)(\d+)/);
+  return { c1: colNum(m[1]), r1: +m[2], c2: colNum(m[3]), r2: +m[4] };
+}
+const wsUrl = () => `${wbBase}/worksheets/${encodeURIComponent(sheet.id)}`;
+
+async function loadSheet() {
+  const [tables, grid] = await Promise.all([
+    g("GET", `${wsUrl()}/tables?$select=id,name,showTotals,showHeaders`),
+    g("GET", `${wsUrl()}/range(address='${GRID}')?$select=formulas,values`)
+  ]);
+  const reqs = tables.value.map((t, i) => ({ id: String(i), method: "GET",
+    url: `/me/drive/items/${itemId}/workbook/tables/${encodeURIComponent(t.id)}/range?$select=address` }));
+  const addrs = [];
+  for (let i = 0; i < reqs.length; i += 20) {
+    const b = await g("POST", "/$batch", { requests: reqs.slice(i, i + 20) });
+    b.responses.forEach(r => { addrs[+r.id] = r.body && r.body.address; });
+  }
+  buildModel(tables.value, addrs, grid);
+}
+
+function buildModel(tables, addrs, grid) {
+  const F = grid.formulas, V = grid.values;
+  const cell = (r, c) => ({ f: (F[r - 1] || [])[c - 1], v: (V[r - 1] || [])[c - 1] });
+  const cats = [];
+  tables.forEach((t, i) => {
+    if (!addrs[i]) return;
+    const a = parseAddr(addrs[i]);
+    if (a.c2 - a.c1 < 2) return;
+    const head = t.showHeaders !== false ? a.r1 : a.r1 - 1;
+    const end = t.showTotals ? a.r2 - 1 : a.r2;
+    const title = String(cell(head - 1, a.c1).v || t.name.replace(/\d+$/, "")).trim();
+    const rows = [];
+    for (let r = head + 1; r <= end; r++) {
+      const name = String(cell(r, a.c1).v || "").trim();
+      const p = cell(r, a.c1 + 1), re = cell(r, a.c1 + 2);
+      if (!name && !p.v && !re.v) continue;
+      rows.push({ name: name || "(sans nom)", prevAddr: colLet(a.c1 + 1) + r, realAddr: colLet(a.c1 + 2) + r,
+        prev: num(p.v), real: num(re.v), realF: re.f == null ? "" : String(re.f), prevF: p.f == null ? "" : String(p.f) });
+    }
+    cats.push({ title, rows, top: a.r1, left: a.c1 });
+  });
+  cats.sort((x, y) => x.top - y.top || x.left - y.left);
+  // Indicateurs : on cherche les libellés et on prend le premier nombre à droite.
+  const find = label => {
+    for (let r = 0; r < V.length; r++) for (let c = 0; c < V[r].length; c++)
+      if (String(V[r][c]).trim().toLowerCase().startsWith(label)) {
+        for (let k = c + 1; k < V[r].length; k++) if (typeof V[r][k] === "number") return V[r][k];
+      }
+    return null;
+  };
+  model = {
+    cats, period: String(cell(2, 2).v || "").trim(),
+    prev: find("coût total prévu"), reel: find("coût total réel"), solde: find("solde réel")
+  };
+}
+const num = v => (v === "" || v == null || isNaN(v)) ? 0 : Number(v);
+
+// ---------- Écriture ----------
+function cleanAmount(s) {
+  s = String(s).trim().replace(/\s|€/g, "").replace(/,/g, ".");
+  if (!s) return null;
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
+  const n = Number(s);
+  return n === 0 || isNaN(n) ? null : n;
+}
+function appendFormula(f, n) {
+  const a = Math.abs(n).toString(), sign = n < 0 ? "-" : "+";
+  f = (f || "").trim();
+  if (!f || f === "0" || f === "=0") return n < 0 ? "=-" + a : "=" + a;
+  return (f.startsWith("=") ? f : "=" + f) + sign + a;
+}
+function exprToFormula(s) {
+  s = String(s).trim().replace(/\s|€/g, "").replace(/,/g, ".");
+  if (!s) return "";
+  if (!/^=?[-+]?[\d.+\-*/()]+$/.test(s)) return null;
+  return s.startsWith("=") ? s : "=" + s;
+}
+async function writeCells(changes, label) {
+  // changes: [{addr, formula, old}]
+  document.body.classList.add("busy");
+  try {
+    for (const c of changes)
+      await g("PATCH", `${wsUrl()}/range(address='${c.addr}')`, { formulas: [[c.formula]] });
+    last = { sheet, changes };
+    await reloadQuiet();
+    toast(label, true);
+  } catch (e) {
+    toast("Erreur : " + e.message, false);
+  } finally { document.body.classList.remove("busy"); }
+}
+async function undo() {
+  if (!last) return;
+  const { sheet: s, changes } = last; last = null;
+  hideToast();
+  document.body.classList.add("busy");
+  try {
+    for (const c of changes)
+      await g("PATCH", `${wbBase}/worksheets/${encodeURIComponent(s.id)}/range(address='${c.addr}')`, { formulas: [[c.old || ""]] });
+    await reloadQuiet();
+    toast("Annulé", false);
+  } catch (e) { toast("Erreur : " + e.message, false); }
+  finally { document.body.classList.remove("busy"); }
+}
+
+// ---------- Rendu ----------
+function render() {
+  $("#period").textContent = model.period;
+  $("#kPrev").textContent = eur(model.prev);
+  $("#kReel").textContent = eur(model.reel);
+  $("#kSolde").textContent = eur(model.solde);
+  const autreCat = model.cats.find(c => c.title.toLowerCase() === cfg.autreTable.toLowerCase());
+  const autreRow = autreCat && autreCat.rows.find(r => r.name.toLowerCase() === cfg.autreRow.toLowerCase());
+  let h = `<section class="card autre">
+    <h2>Autre</h2>
+    <div class="line">
+      <input class="num" id="autreIn" inputmode="decimal" placeholder="Montant €" autocomplete="off">
+      <button class="btn" id="autreBtn">Ajouter</button>
+    </div>
+    <small>${autreRow ? `Va dans le tableau « ${esc(autreCat.title)} », ligne « ${esc(autreRow.name)} » (${autreRow.realAddr}) · déjà : ${eur(autreRow.real)}`
+      : `Tableau « ${esc(cfg.autreTable)} » / ligne « ${esc(cfg.autreRow)} » introuvable sur cette feuille.`}</small>
+  </section>`;
+  model.cats.forEach((c, ci) => {
+    const tp = c.rows.reduce((s, r) => s + r.prev, 0), tr = c.rows.reduce((s, r) => s + r.real, 0);
+    h += `<section class="card"><table>
+      <caption>${esc(c.title)}<span class="sub">${short(tr) || "0,00"} / ${short(tp) || "0,00"}</span></caption>
+      <thead><tr><th>Poste</th><th>Prévu</th><th>Réel</th><th>+ Ajout</th></tr></thead><tbody>`;
+    c.rows.forEach((r, ri) => {
+      const cls = r.real > r.prev + 0.005 ? "over" : (r.prev > 0 && r.real > 0 ? "under" : "");
+      h += `<tr data-c="${ci}" data-r="${ri}">
+        <td class="name">${esc(r.name)}</td>
+        <td class="muted">${short(r.prev)}</td>
+        <td class="real ${cls}">${short(r.real)}</td>
+        <td class="add"><input class="num" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="Ajouter à ${esc(r.name)}"></td>
+      </tr>`;
+    });
+    h += `<tr class="total"><td>Total</td><td class="muted">${short(tp)}</td><td>${short(tr)}</td><td></td></tr></tbody></table></section>`;
+  });
+  $("#main").innerHTML = h;
+
+  const addTo = (row, cat, input) => {
+    const n = cleanAmount(input.value);
+    if (n == null) { input.focus(); return; }
+    input.value = "";
+    writeCells([{ addr: row.realAddr, formula: appendFormula(row.realF, n), old: row.realF }],
+      `${n > 0 ? "+" : ""}${short(n)} € → ${cat.title} / ${row.name}`);
+  };
+  $("#autreBtn").onclick = () => autreRow && addTo(autreRow, autreCat, $("#autreIn"));
+  $("#autreIn").onkeydown = e => { if (e.key === "Enter") $("#autreBtn").click(); };
+
+  document.querySelectorAll("tr[data-c]").forEach(tr => {
+    const c = model.cats[tr.dataset.c], r = c.rows[tr.dataset.r];
+    const inp = tr.querySelector("input");
+    inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } };
+    inp.onchange = () => addTo(r, c, inp);
+    tr.querySelector(".name").onclick = tr.querySelector(".real").onclick = () => openDetail(c, r);
+  });
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+
+function openDetail(c, r) {
+  $("#dlgTitle").textContent = r.name;
+  $("#dlgCat").textContent = `${c.title} · ${sheet.name}`;
+  const expr = r.realF.replace(/^=/, "");
+  const parts = expr ? expr.match(/[-+]?[^-+]+/g) || [] : [];
+  $("#dlgParts").innerHTML = parts.length
+    ? parts.map(p => `<span>${esc(p.replace(/\./g, ","))}</span>`).join("") + `<span><b>= ${short(r.real) || "0,00"}</b></span>`
+    : `<span class="muted">vide</span>`;
+  $("#dlgReal").value = expr.replace(/\./g, ",");
+  $("#dlgPrev").value = r.prevF.replace(/^=/, "").replace(/\./g, ",");
+  const d = $("#dlg");
+  d.onclose = () => {
+    if (d.returnValue !== "save") return;
+    const nr = exprToFormula($("#dlgReal").value), np = exprToFormula($("#dlgPrev").value);
+    if (nr === null || np === null) { toast("Formule invalide (chiffres, + - * / uniquement)", false); return; }
+    const norm = f => !f ? "" : (f.startsWith("=") ? f : "=" + f);
+    const ch = [];
+    if (nr !== norm(r.realF)) ch.push({ addr: r.realAddr, formula: nr, old: r.realF });
+    if (np !== norm(r.prevF)) ch.push({ addr: r.prevAddr, formula: np, old: r.prevF });
+    if (ch.length) writeCells(ch, `${r.name} mis à jour`);
+  };
+  ["#dlgReal", "#dlgPrev"].forEach(s => $(s).onkeydown = e => {
+    if (e.key === "Enter") { e.preventDefault(); d.close("save"); }
+  });
+  d.returnValue = "";
+  d.showModal();
+}
+
+let tTimer;
+function toast(msg, canUndo) {
+  $("#toastMsg").textContent = msg;
+  $("#toastUndo").style.display = canUndo ? "" : "none";
+  $("#toast").classList.add("show");
+  clearTimeout(tTimer); tTimer = setTimeout(hideToast, 6000);
+}
+function hideToast() { $("#toast").classList.remove("show"); }
+$("#toastUndo").onclick = undo;
+
+function showSetup(err) {
+  $("#main").innerHTML = `<section class="card setup">
+    <h2 style="margin-top:0">Réglages</h2>
+    ${err ? `<p style="color:var(--over)">${esc(err)}</p>` : ""}
+    <label for="sClient">ID d'application (client) Azure</label>
+    <input id="sClient" value="${esc(cfg.clientId)}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+    <label for="sPath">Chemin du fichier dans OneDrive</label>
+    <input id="sPath" value="${esc(cfg.filePath)}">
+    <label for="sTab">Tableau de la case « Autre »</label>
+    <input id="sTab" value="${esc(cfg.autreTable)}">
+    <label for="sRow">Ligne de la case « Autre »</label>
+    <input id="sRow" value="${esc(cfg.autreRow)}">
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn" id="sSave">Enregistrer et se connecter</button>
+      ${account ? `<button class="btn ghost" id="sOut">Se déconnecter</button>` : ""}
+    </div>
+  </section>`;
+  $("#sSave").onclick = () => {
+    cfg = Object.assign(cfg, { clientId: $("#sClient").value.trim(), filePath: $("#sPath").value.trim(),
+      autreTable: $("#sTab").value.trim() || "Autre", autreRow: $("#sRow").value.trim() || "Autre" });
+    saveCfg(cfg); location.reload();
+  };
+  const out = $("#sOut");
+  if (out) out.onclick = () => pca.logoutRedirect({ account });
+}
+
+async function reloadQuiet() { await loadSheet(); render(); }
+async function selectSheet(s) {
+  sheet = s; $("#month").value = s.id;
+  $("#main").innerHTML = `<div class="empty">Chargement de ${esc(s.name)}…</div>`;
+  try { await reloadQuiet(); } catch (e) { $("#main").innerHTML = `<div class="empty">Erreur : ${esc(e.message)}</div>`; }
+}
+
+async function start() {
+  $("#settingsBtn").onclick = () => showSetup();
+  if (!cfg.clientId) { showSetup(); return; }
+  try {
+    if (!await initAuth()) return;
+    await openFile();
+  } catch (e) { showSetup("Connexion / fichier : " + e.message); return; }
+  $("#month").innerHTML = sheets.slice().reverse().map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+  $("#month").onchange = () => selectSheet(sheets.find(s => s.id === $("#month").value));
+  $("#refresh").onclick = () => selectSheet(sheet);
+  await selectSheet(defaultSheet());
+}
+start();
+</script>
+</body>
+</html>
